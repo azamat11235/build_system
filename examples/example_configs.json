@@ -1,0 +1,49 @@
+{
+
+    "goals": [ "haproxy" ],  // Цели сборки
+
+    "jobs": [
+
+        {
+
+            "name": "haproxy",  // Имя задачи
+
+            "commands": [  // Список пользовательских команд
+
+                "python -c 'import time; time.sleep(5)'",
+
+                "python -c \"open('haproxy', 'w').write('baz')\""
+
+            ],
+
+            "depends_on": [  // Список зависимостей, может отсутствовать
+
+                "pcre2",
+
+                "openssl"
+
+            ]
+
+        },
+
+        {
+
+            "name": "pcre2",
+
+            "commands": [ "python -c \"open('pcre2', 'w').write('foo')\"" ],
+
+            "timeout": 7200  // Таймаут в секундах, может отсутствовать
+
+        },
+
+        {
+
+            "name": "openssl",
+
+            "commands": [ "python -c \"open('openssl', 'w').write('bar')\"" ]
+
+        }
+
+    ]
+
+}

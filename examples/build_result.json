@@ -1,0 +1,18 @@
+{
+    "state": "sucsess",
+    "jobs": [
+        {
+            "name": "openssl",
+            "state": "sucsess"
+        },
+        {
+            "name": "pcre2",
+            "state": "sucsess"
+        },
+        {
+            "name": "haproxy",
+            "state": "sucsess",
+            "artifact": "/home/azamat/assembly_system/artifacts/artifacts/haproxy"
+        }
+    ]
+}
