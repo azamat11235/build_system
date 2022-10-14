@@ -47,12 +47,14 @@ class Builder:
             worker.start()
             workers.append(worker)
 
+        jobsCount = len(jobs)
         while jobs and not failureEvent.is_set():
             independentJobs = [job for job in jobs if not job.get('depends_on')]
             for indJob in independentJobs:
                 jobs.remove(indJob)
                 queue.put(indJob)
             finishedJobName = parent_conn.recv()
+            jobsCount -= 1
             for job in jobs:
                 depJobs = job.get('depends_on', [])
                 if finishedJobName in depJobs:
@@ -60,16 +62,21 @@ class Builder:
 
         for _ in workers:
             queue.put(None)
+
+        while jobsCount and not failureEvent.is_set():
+            finishedJobName = parent_conn.recv()
+            jobsCount -= 1
+
         for worker in workers:
             if failureEvent.is_set():
-                worker.kill()
-            else:
-                worker.join()
+                worker.terminate()
+            worker.join()
                 
         logs = dict(logs_shared)
         manager.shutdown()
         if failureEvent.is_set():
             logs['state'] = 'failure'
+
         return logs
 
     def _runJob(self, logs_shared, queue, lock, failureEvent, pipe):
@@ -86,14 +93,13 @@ class Builder:
                     subprocess.run(shlex.split(command),
                                    timeout=job.get('timeout'),
                                    cwd=cwd,
-                                   check=True)
+                                   check=True,
+                                   stderr=subprocess.DEVNULL)
             except subprocess.TimeoutExpired:
                 state = 'timeout'
-                failureEvent.set()
             except Exception as exc:
                 print(exc)
                 state = 'failure'
-                failureEvent.set()
             else:
                 state = 'sucsess'
 
@@ -101,6 +107,8 @@ class Builder:
                 logs_shared['jobs'] += [{'name': job['name'],
                                         'state': state}]
                 pipe.send(job['name'])
+                if state != 'sucsess':
+                    failureEvent.set()
             queue.task_done()
 
     def _processArtifacts(self, jobs):
