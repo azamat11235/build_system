@@ -35,6 +35,7 @@ class Builder:
 
     def _runJobs(self, jobs):
         manager = mp.Manager()
+        parent_conn, child_conn = mp.Pipe()
         queue = mp.JoinableQueue()
         lock = mp.Lock()
         failureEvent = mp.Event()
@@ -42,35 +43,39 @@ class Builder:
         workers = []
         for _ in range(self._procCount):
             worker = mp.Process(target=self._runJob,
-                                args=(logs_shared, queue, lock, failureEvent))
+                                args=(logs_shared, queue, lock, failureEvent, child_conn))
             worker.start()
             workers.append(worker)
 
-        while jobs:
+        while jobs and not failureEvent.is_set():
             independentJobs = [job for job in jobs if not job.get('depends_on')]
             for indJob in independentJobs:
                 jobs.remove(indJob)
                 queue.put(indJob)
-            for indJob in independentJobs:
-                for job in jobs:
-                    depJobs = job.get('depends_on')
-                    if depJobs and indJob['name'] in depJobs:
-                        depJobs.remove(indJob['name'])
+            finishedJobName = parent_conn.recv()
+            for job in jobs:
+                depJobs = job.get('depends_on', [])
+                if finishedJobName in depJobs:
+                    depJobs.remove(finishedJobName)
 
         for _ in workers:
             queue.put(None)
         for worker in workers:
-            worker.join()
+            if failureEvent.is_set():
+                worker.kill()
+            else:
+                worker.join()
+                
         logs = dict(logs_shared)
         manager.shutdown()
         if failureEvent.is_set():
             logs['state'] = 'failure'
         return logs
 
-    def _runJob(self, logs_shared, queue, lock, failureEvent):
+    def _runJob(self, logs_shared, queue, lock, failureEvent, pipe):
         while not failureEvent.is_set():
             job = queue.get()
-            if job is None:
+            if job is None or failureEvent.is_set():
                 break
             cwd = os.path.join(self._artifactsPath, job['name'])
             os.mkdir(cwd)
@@ -78,13 +83,15 @@ class Builder:
             try:
                 for command in job['commands']:
                     print('--', 'job: %-15s' % job['name'], command) ##
-                    subprocess.check_call(shlex.split(command),
-                                          timeout=job.get('timeout'),
-                                          cwd=cwd)
+                    subprocess.run(shlex.split(command),
+                                   timeout=job.get('timeout'),
+                                   cwd=cwd,
+                                   check=True)
             except subprocess.TimeoutExpired:
                 state = 'timeout'
                 failureEvent.set()
-            except subprocess.CalledProcessError:
+            except Exception as exc:
+                print(exc)
                 state = 'failure'
                 failureEvent.set()
             else:
@@ -93,6 +100,7 @@ class Builder:
             with lock:
                 logs_shared['jobs'] += [{'name': job['name'],
                                         'state': state}]
+                pipe.send(job['name'])
             queue.task_done()
 
     def _processArtifacts(self, jobs):
