@@ -24,8 +24,11 @@ class Builder:
             configs = jstyleson.load(f)
 
         logs = self._runJobs(copy.deepcopy(configs['jobs']))
-        self._processArtifacts(configs['jobs'])
-        self._processGoals(configs['goals'], logs)
+        if logs['state'] == 'sucsess':
+            self._processArtifacts(configs['jobs'])
+            self._processGoals(configs['goals'], logs)
+        else:
+            shutil.rmtree(self._artifactsPath)
 
         with open(self._buildResultPath, 'w') as f:
             jstyleson.dump(logs, f, separators=(',', ': '), indent=4)
@@ -36,7 +39,6 @@ class Builder:
         lock = mp.Lock()
         failureEvent = mp.Event()
         logs_shared = manager.dict({'state': 'sucsess', 'jobs': []})
-        jobs_shared = manager.list()
         workers = []
         for _ in range(self._procCount):
             worker = mp.Process(target=self._runJob,
@@ -62,7 +64,7 @@ class Builder:
         logs = dict(logs_shared)
         manager.shutdown()
         if failureEvent.is_set():
-            logs_shared['state'] = 'failure'
+            logs['state'] = 'failure'
         return logs
 
     def _runJob(self, logs_shared, queue, lock, failureEvent):
@@ -72,14 +74,13 @@ class Builder:
                 break
             cwd = os.path.join(self._artifactsPath, job['name'])
             os.mkdir(cwd)
-            
+
             try:
                 for command in job['commands']:
                     print('--', 'job: %-15s' % job['name'], command) ##
                     subprocess.check_call(shlex.split(command),
                                           timeout=job.get('timeout'),
-                                          cwd=cwd,
-                                          stderr=subprocess.DEVNULL)
+                                          cwd=cwd)
             except subprocess.TimeoutExpired:
                 state = 'timeout'
                 failureEvent.set()
@@ -107,8 +108,8 @@ class Builder:
         if os.path.exists(oldPath):
             os.rename(oldPath, cwd)
         for depJobName in curJob.get('depends_on', []):
-            inRoot = os.path.exists(os.path.join(self._artifactsPath, depJobName))
-            if depJobName not in visited or inRoot:
+            atRoot = os.path.exists(os.path.join(self._artifactsPath, depJobName))
+            if depJobName not in visited or atRoot:
                 cwd = os.path.join(cwd, 'input')
                 if not os.path.exists(cwd):
                     os.mkdir(cwd)
@@ -130,9 +131,8 @@ class Builder:
         for root, _, _ in os.walk(self._artifactsPath):
             dirname = os.path.split(root)[1]
             if dirname in goals:
-                path = os.path.abspath(root)
                 job = self._getJobByName(dirname, logs['jobs'])
-                job['artifact'] = path
+                job['artifact'] = os.path.abspath(root)
 
     def _getJobByName(self, name, jobs):
         for job in jobs:
