@@ -12,7 +12,7 @@
         {
             "name": "haproxy",
             "state": "sucsess",
-            "artifact": "/home/azamat/assembly_system/artifacts/artifacts/haproxy"
+            "artifact": "/home/azamat/build_system/artifacts/haproxy"
         }
     ]
 }

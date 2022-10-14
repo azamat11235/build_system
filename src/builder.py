@@ -130,9 +130,9 @@ class Builder:
         for root, _, _ in os.walk(self._artifactsPath):
             dirname = os.path.split(root)[1]
             if dirname in goals:
-                path = os.path.join(self._artifactsPath, root)
+                path = os.path.abspath(root)
                 job = self._getJobByName(dirname, logs['jobs'])
-                job['artifact'] = os.path.join(os.getcwd(), path)
+                job['artifact'] = path
 
     def _getJobByName(self, name, jobs):
         for job in jobs:
