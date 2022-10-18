@@ -106,9 +106,9 @@ class Builder:
             with lock:
                 logs_shared['jobs'] += [{'name': job['name'],
                                         'state': state}]
-                pipe.send(job['name'])
                 if state != 'sucsess':
                     failureEvent.set()
+                pipe.send(job['name'])
             queue.task_done()
 
     def _processArtifacts(self, jobs):
